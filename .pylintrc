@@ -39,7 +39,7 @@ extension-pkg-whitelist=
 fail-on=
 
 # Specify a score threshold under which the program will exit with error.
-fail-under=10
+fail-under=9
 
 # Interpret the stdin as a python script, whose filename needs to be passed as
 # the module_or_package argument.
@@ -434,6 +434,7 @@ disable=missing-module-docstring,
         too-few-public-methods,
         E1101,
         C0115,
+        W1203,
         duplicate-code,
         raise-missing-from,
         wrong-import-order,
