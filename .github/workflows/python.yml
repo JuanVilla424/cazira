@@ -9,13 +9,16 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.12"]
+    env:
+      REPO_NAME: ${{ github.event.repository.name }}
+      FOLDER_TO_COMPRESS: 'src'
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install backend dependencies
+      - name: Install dependencies
         run: |
           python -m venv venv
           source venv/bin/activate
@@ -23,16 +26,14 @@ jobs:
           pip install poetry
           poetry lock
           poetry install
-        working-directory: backend
-      - name: Format backend check with Black
+      - name: Format check with Black
         run: |
           source venv/bin/activate
-          black --check app/
-          black --check tests/
-          black --check ../scripts/
-        working-directory: backend
-      - name: Lint backend with Pylint
+          black --check "${FOLDER_TO_COMPRESS}"/
+        env:
+          REPO_NAME: ${{ env.REPO_NAME }}
+          FOLDER_TO_COMPRESS: ${{ env.FOLDER_TO_COMPRESS }}
+      - name: Lint with Pylint
         run: |
           source venv/bin/activate
           pylint $(git ls-files '*.py')
-        working-directory: backend
