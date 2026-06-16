@@ -130,7 +130,6 @@ pre-commit run --all-files
 ### 📌 Extra Steps
 
 1. **Docker**:
-
    - Using MacOs or Linux:
      ```bash
      brew install hadolint
@@ -147,7 +146,6 @@ pre-commit run --all-files
 **To utilize the CI/CD pipeline, follow these steps**:
 
 1. **Configure GitHub Actions**
-
    - Navigate to the .github/workflows/ directory.
    - Customize the ci.yml file according to your project's requirements.
    - Customize the python.yml file to format and lint python code.
@@ -155,12 +153,10 @@ pre-commit run --all-files
    - Customize the release-controller file to add or remove **[backend, frontend, docker deployment, database]**
 
 2. **Set Up Secrets**
-
    - Go to your GitHub repository settings.
    - Navigate to Secrets and add necessary secrets like CODECOV_KEY, etc.
 
 3. **Triggering the Pipeline**
-
    - Push to Branches: Pushing code to dev, test, prod, or main branches will trigger the pipeline.
    - Pull Requests: Opening or updating pull requests will run tests and checks.
 
