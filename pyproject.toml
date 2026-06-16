@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cazira"
-version = "1.0.10"
+version = "1.0.11"
 description = "Cazira is a doc compiler based on git submodule routines."
 authors = ["B <g46327wsj1.marbling129@passinbox.com>"]
 license = "GPLv3"
