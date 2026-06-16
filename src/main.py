@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """
-Cariza is a doc compiler based on git submodule routines.
+Cazira is a doc compiler based on git submodule routines.
 This script downloads README.md files from specified GitHub repositories,
 considering their license types. It includes logging for tracking the process.
 """
 
 import os
-import requests
 import argparse
 import logging
 import time
 from logging.handlers import RotatingFileHandler
 from typing import List, Optional
 
+import requests
+
 # Constants
 GITHUB_API_URL = "https://api.github.com/repos/"
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/"
-GITHUB_TOKEN = None  # Replace with your GitHub token if needed
+REQUEST_TIMEOUT = 30  # seconds
+MAX_RETRIES = 3
 
 # Allowed licenses
 ALLOWED_LICENSES = [
@@ -27,7 +29,7 @@ ALLOWED_LICENSES = [
 ]
 
 # Configure logger
-logger = logging.getLogger("__main__")
+logger = logging.getLogger(__name__)
 
 
 def configure_logger(log_level: str = "INFO") -> None:
@@ -68,7 +70,19 @@ def parse_arguments() -> argparse.Namespace:
         argparse.Namespace: Parsed arguments.
     """
     parser = argparse.ArgumentParser(
-        description="Cariza is a doc compiler based on git submodule routines."
+        description="Cazira is a doc compiler based on git submodule routines."
+    )
+    parser.add_argument(
+        "--repos",
+        type=str,
+        default=None,
+        help="Comma-separated list of repositories in 'owner/repo' format.",
+    )
+    parser.add_argument(
+        "--repos-file",
+        type=str,
+        default=None,
+        help="Path to a file with one 'owner/repo' per line (lines starting with '#' are ignored).",
     )
     parser.add_argument(
         "--output-dir",
@@ -91,6 +105,56 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_repositories(repos: Optional[str], repos_file: Optional[str]) -> List[str]:
+    """
+    Resolve the target repository list from --repos-file or --repos.
+
+    Args:
+        repos (Optional[str]): Comma-separated 'owner/repo' values.
+        repos_file (Optional[str]): Path to a file with one 'owner/repo' per line.
+
+    Returns:
+        List[str]: Repositories in 'owner/repo' format ('#' comment lines ignored).
+    """
+    if repos_file:
+        with open(repos_file, encoding="utf-8") as handle:
+            return [
+                line.strip() for line in handle if line.strip() and not line.strip().startswith("#")
+            ]
+    if repos:
+        return [item.strip() for item in repos.split(",") if item.strip()]
+    return []
+
+
+def _request_get(url: str, headers: dict) -> Optional[requests.Response]:
+    """
+    Perform a GET request with a timeout and simple backoff on GitHub rate limiting.
+
+    Args:
+        url (str): Target URL.
+        headers (dict): Request headers.
+
+    Returns:
+        Optional[requests.Response]: The response, or None on a network error.
+    """
+    response = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
+        except requests.exceptions.RequestException as exc:
+            logger.error(f"Request to {url} failed: {exc}")
+            return None
+        if response.status_code == 403 and "rate limit" in response.text.lower():
+            wait = 2**attempt
+            logger.warning(
+                f"GitHub rate limit hit. Retrying in {wait}s (attempt {attempt}/{MAX_RETRIES})."
+            )
+            time.sleep(wait)
+            continue
+        return response
+    return response
+
+
 def get_repo_info(owner: str, repo: str, token: Optional[str] = None) -> Optional[dict]:
     """
     Fetch repository information from GitHub API.
@@ -108,16 +172,13 @@ def get_repo_info(owner: str, repo: str, token: Optional[str] = None) -> Optiona
     if token:
         headers["Authorization"] = f"token {token}"
     logger.debug(f"Fetching data from URL: {url}")
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
+    response = _request_get(url, headers)
+    if response is not None and response.status_code == 200:
         logger.info(f"Successfully fetched data for repository: {owner}/{repo}")
         return response.json()
-    else:
-        logger.error(
-            f"Failed to fetch data for repository: {owner}/{repo}. "
-            f"Status Code: {response.status_code}. Response: {response.text}"
-        )
-        return None
+    status = response.status_code if response is not None else "no response"
+    logger.error(f"Failed to fetch data for repository: {owner}/{repo}. Status: {status}.")
+    return None
 
 
 def download_readme(
@@ -140,16 +201,13 @@ def download_readme(
     if token:
         headers["Authorization"] = f"token {token}"
     logger.debug(f"Downloading README.md from URL: {url}")
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
+    response = _request_get(url, headers)
+    if response is not None and response.status_code == 200:
         logger.info(f"Successfully downloaded README.md for repository: {owner}/{repo}")
         return response.text
-    else:
-        logger.error(
-            f"Failed to download README.md for repository: {owner}/{repo}. "
-            f"Status Code: {response.status_code}"
-        )
-        return None
+    status = response.status_code if response is not None else "no response"
+    logger.error(f"Failed to download README.md for repository: {owner}/{repo}. Status: {status}.")
+    return None
 
 
 def save_readme(content: str, filename: str, directory: str) -> None:
@@ -171,8 +229,8 @@ def save_readme(content: str, filename: str, directory: str) -> None:
         with open(file_path, "w", encoding="utf-8") as md_file:
             md_file.write(content)
         logger.info(f"README.md saved: {file_path}")
-    except Exception as e:
-        logger.error(f"Failed to save README.md file {file_path}. Error: {e}")
+    except OSError as exc:
+        logger.error(f"Failed to save README.md file {file_path}. Error: {exc}")
 
 
 def process_repositories(repos: List[str], output_dir: str, token: Optional[str] = None) -> None:
@@ -212,7 +270,8 @@ def process_repositories(repos: List[str], output_dir: str, token: Optional[str]
         license_name = license_info.get("name", "").lower()
         if license_name not in ALLOWED_LICENSES:
             logger.warning(
-                f"Repository '{full_repo}' has a license '{license_name}' which is not allowed. Skipping."
+                f"Repository '{full_repo}' has a license '{license_name}' which is not allowed. "
+                "Skipping."
             )
             continue
 
@@ -229,7 +288,7 @@ def process_repositories(repos: List[str], output_dir: str, token: Optional[str]
         save_readme(readme_content, repo, output_dir)
 
 
-def main():
+def main() -> None:
     """
     Main function to execute the script.
     """
@@ -238,30 +297,20 @@ def main():
     args = parse_arguments()
     configure_logger(args.log_level)
 
-    # Directories
     output_dir = args.output_dir
-
-    # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     logger.debug(f"Output directory is set to: {output_dir}")
 
-    # Example list of target repositories
-    target_repositories = [
-        "ikatyang/emoji-cheat-sheet"
-        # Add more repositories as needed
-    ]
-
-    # Optionally, you can read repositories from a file or another source
-    # For example:
-    # with open('repositories.txt', 'r') as file:
-    #     target_repositories = [line.strip() for line in file if line.strip()]
+    target_repositories = load_repositories(args.repos, args.repos_file)
+    if not target_repositories:
+        logger.error("No repositories provided. Use --repos 'owner/repo,...' or --repos-file PATH.")
+        return
 
     logger.info("Starting README.md download process.")
     process_repositories(target_repositories, output_dir, args.token)
     logger.info("README.md download process completed.")
 
-    end_time = time.time()
-    elapsed_time = end_time - start_time
+    elapsed_time = time.time() - start_time
     logger.info(f"Total time taken: {elapsed_time:.2f} seconds")
 
 
