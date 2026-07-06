@@ -10,7 +10,7 @@ package-mode = false
 [tool.poetry.dependencies]
 python = "^3.12"
 requests = "^2.32.0"
-setuptools = "^75.2.0"
+setuptools = ">=75.2,<84.0"
 idna="^3.0"
 certifi="^2025.10.5"
 bump2version="^1.0.0"
